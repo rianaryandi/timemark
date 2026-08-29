@@ -1,0 +1,19 @@
+{
+  "name": "timemark-app",
+  "version": "1.0.0",
+  "description": "Aplikasi stempel foto (timemark) untuk Android - galeri & kamera",
+  "main": "index.html",
+  "scripts": {
+    "capacitor:add": "capacitor add android",
+    "capacitor:sync": "capacitor sync android",
+    "capacitor:open": "capacitor open android",
+    "android:build": "cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/camera": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0"
+  }
+}

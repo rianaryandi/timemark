@@ -1,0 +1,8 @@
+{
+  "appId": "com.timemark.foto",
+  "appName": "Timemark Foto",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

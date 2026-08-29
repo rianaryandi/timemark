@@ -1,0 +1,103 @@
+====================================================================
+  PANDUAN MEMBUAT APK "TIMEMARK FOTO" — STEP BY STEP
+====================================================================
+
+Aplikasi: stempel foto dengan WAKTU, TANGGAL, GPS, TEKS BEBAS, LOGO.
+Sumber foto: GALERI + KAMERA.
+Cara: aplikasi web (PWA) yang dibungkus jadi APK Android via Capacitor.
+
+ADA 3 JALUR. Rekomendasi: JALUR A (paling andal — APK pasti jadi).
+
+====================================================================
+JALUR A (PALING DIREKOMENDASIKAN) — BUILD APK OTOMATIS DI CLOUD
+Menggunakan "GitHub Actions" → APK di-build GRATIS di server cloud,
+TANPA perlu Termux/PC/Java/Android SDK di HP kamu.
+====================================================================
+1. Buka github.com → Login → klik "+" → "New repository".
+   Nama bebas (mis. "timemark"). Setel PUBLIC agar GitHub Actions gratis.
+
+2. Unggah project ke repo itu:
+   - Di HP, ekstrak timemark-app.zip → buka folder-nya.
+   - Di GitHub, buka repo → "uploading an existing file" → drag & drop
+     SEMUA file & folder di dalamnya:
+        index.html
+        js/
+        css/
+        package.json
+        capacitor.config.json
+        manifest.webmanifest
+        sw.js
+        icon-192.png  icon-512.png
+        .github/          <-- PENTING: folder berisi workflow build APK
+   - Klik "Commit changes".
+
+3. Buka tab "Actions" di repo.
+   Workflow "Build APK" otomatis jalan karena ada push ke branch main.
+   Kalau tidak, buka Actions → "Build APK" → "Run workflow" → Run.
+
+4. Tunggu proses selesai (beberapa menit; tampil lingkaran hijau ✓).
+
+5. Klik workflow yang berhasil → bagian "Artifacts" →
+   unduh file  "timemark-foto-apk.zip".
+
+6. Ekstrak zip itu → di dalamnya ada "app-debug.apk"
+   → install di HP kamu.
+
+PENTING: Folder .github/workflows/build-apk.yml WAJIB ikut terunggah,
+karena file itulah yang memicu build otomatis APK.
+
+====================================================================
+JALUR B — BUILD DI HP VIA TERMUX (opsi cadangan)
+====================================================================
+PERHATIAN: jalan ini butuh kuota besar (±500MB SDK) dan cenderung
+gagal karena keterbatasan Termux. Disarankan JALUR A. Berikut jika
+tetap ingin pakai Termux:
+
+1. Install Termux dari F-Droid (bukan Play Store):
+   https://f-droid.org/packages/com.termux/
+2. Buka Termux lalu beri akses penyimpanan:
+      termux-setup-storage
+   (pilih "IZINKAN"), lalu TUTUP & BUKA ULANG Termux.
+3. Uji akses:
+      ls ~/storage/downloads/
+   (harus tampil isi folder Download).
+4. Pindah ke folder project (sesuaikan nama folder):
+      cd ~/storage/downloads/timemark-app
+   Pastikan di dalamnya ada build-apk.sh:
+      ls
+5. Jalankan build:
+      bash build-apk.sh
+   Skrip otomatis: install nodejs+java+SDK → setup Capacitor →
+   tambah izin → build APK → salin ke Download/timemark-foto.apk.
+6. Install hasil APK (lihat "Cara Install APK" di bawah).
+
+====================================================================
+JALUR C — INSTAN TANPA APK (PWA)
+====================================================================
+Aplikasi ini PWA → bisa dipakai penuh tanpa APK sama sekali:
+1. Upload HANYA file web (index.html, js/, css/, manifest, icon)
+   ke hosting statis gratis seperti Netlify Drop atau GitHub Pages.
+2. Buka link di Chrome Android.
+3. Menu ⋮ → "Tambahkan ke layar utama" → jalan fullscreen seperti app.
+Fitur kamera/galeri/gps/stempel semua berfungsi. Server Tidak Dianggap
+Wajib untuk PWA.
+
+====================================================================
+CARA INSTALL APK (hasil JALUR A / B)
+====================================================================
+1. Pindahkan file "app-debug.apk" (atau timemark-foto.apk) ke HP.
+2. Buka aplikasi File/My Files → cari file APK → ketuk.
+3. Jika diminta, aktifkan "Izinkan dari sumber ini" / "Install apps
+   from unknown sources".
+4. Install → Buka → Selesai! 🎉
+
+====================================================================
+CATATAN FITUR
+====================================================================
+- Pilih foto: Galeri ATAU Kamera.
+- Stempel: Waktu (⏰), Tanggal (📅), GPS (📍), Teks bebas/alamat,
+  Logo "TM" — semuanya bisa on/off.
+- Atur warna, ukuran, dan posisi stempel (atas/bawah).
+- Saat APK: hasil tersimpan otomatis. Saat web: terunduh ke folder
+  Download HP.
+====================================================================
