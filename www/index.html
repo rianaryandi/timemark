@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#282e3e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Timemark Foto</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- Header -->
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-logo">TM</span>
+      <div class="brand-text">
+        <strong>Timemark Foto</strong>
+        <small>Stempel galeri &amp; kamera</small>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mode selection -->
+  <section id="mode-pick" class="screen active">
+    <div class="card">
+      <h2>Pilih Sumber Foto</h2>
+      <div class="mode-grid">
+        <button class="mode-btn" data-mode="gallery">
+          <span class="mode-ico">🖼️</span>
+          <span>Dari Galeri</span>
+        </button>
+        <button class="mode-btn" data-mode="camera">
+          <span class="mode-ico">📷</span>
+          <span>Kamera</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Editor -->
+  <section id="editor" class="screen">
+    <div class="canvas-wrap">
+      <canvas id="cv"></canvas>
+    </div>
+
+    <div id="stamps-box">
+      <div class="stamp-item">
+        <label>Isi Stempel</label>
+        <div class="chk-row">
+          <span>🖼️ Logo</span>
+          <label class="switch"><input type="checkbox" id="chkLogo" checked><span class="slider"></span></label>
+          <span>⏰ Waktu</span>
+          <label class="switch"><input type="checkbox" id="chkTime" checked><span class="slider"></span></label>
+        </div>
+        <div class="chk-row" style="margin-top:10px;">
+          <span>📅 Tanggal</span>
+          <label class="switch"><input type="checkbox" id="chkDate" checked><span class="slider"></span></label>
+          <span>📍 GPS</span>
+          <label class="switch"><input type="checkbox" id="chkGps" checked><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="stamp-item">
+        <label for="txtAddress">Teks bebas / alamat</label>
+        <input type="text" id="txtAddress" placeholder="Cth: Rumah, Jl. Merdeka 1">
+      </div>
+
+      <div class="stamp-item">
+        <label>Posisi &amp; penampilan</label>
+        <div class="chk-row">
+          <select id="selPos">
+            <option value="bottom" selected>Bawah</option>
+            <option value="top">Atas</option>
+          </select>
+          <select id="selSize">
+            <option value="36">Kecil</option>
+            <option value="48" selected>Sedang</option>
+            <option value="64">Besar</option>
+          </select>
+          <input type="color" id="txtColor" value="#ff3b30" title="Warna stempel">
+        </div>
+      </div>
+    </div>
+
+    <div id="gps-box" class="hidden">
+      <label>Status GPS</label>
+      <div id="gps-status">📍 Lokasi: menunggu...</div>
+    </div>
+
+    <div class="actions">
+      <button id="btnSave" class="btn primary">💾 Simpan &amp; Stempel</button>
+      <button id="btnBack" class="btn ghost">Ulangi</button>
+    </div>
+  </section>
+
+  <!-- Done -->
+  <section id="done" class="screen">
+    <div class="card center">
+      <div class="big-ok">✅</div>
+      <h2>Tersimpan!</h2>
+      <div id="done-msg" class="muted">Foto sudah distempel dan disimpan.</div>
+      <br>
+      <button id="btnNew" class="btn primary">Stempel foto lain</button>
+    </div>
+  </section>
+
+  <input type="file" id="fileInput" accept="image/*" hidden>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+  }
+</script>
+</body>
+</html>
