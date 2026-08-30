@@ -53,8 +53,83 @@ header#topbar {
   display: flex; flex-direction: column; gap: 10px; align-items: center;
   font-size: 15px;
 }
+.mode-btn[data-mode="live"] { grid-column: 1 / -1; }
 .mode-btn:active { transform: scale(.97); }
 .mode-ico { font-size: 40px; }
+.mode-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* ============ LIVE CAMERA ============ */
+#cam { padding: 0; }
+.cam-stage {
+  position: relative;
+  width: 100%;
+  max-height: 74vh;
+  overflow: hidden;
+  background: #000;
+}
+#camvideo {
+  width: 100%;
+  max-height: 74vh;
+  object-fit: cover;
+  display: block;
+}
+.cam-bar {
+  position: absolute;
+  left: 0; right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  pointer-events: none;
+}
+.cam-bar.top { top: 0; }
+.cam-bar.bottom { bottom: 0; flex-wrap: wrap; }
+.cam-chip {
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  max-width: 60%;
+  word-break: break-word;
+}
+.cam-chip.big { font-size: 26px; letter-spacing: 1px; }
+.cam-chip.addr { max-width: 100%; }
+
+.cam-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px 8px;
+}
+.cam-round {
+  width: 52px; height: 52px; border-radius: 50%;
+  border: none; background: #3f4760; color: #fff;
+  font-size: 20px; cursor: pointer;
+}
+.cam-round:active { transform: scale(.94); }
+.shutter {
+  width: 74px; height: 74px; border-radius: 50%;
+  border: 4px solid #fff; background: #ff3b30;
+  cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
+.shutter:active { transform: scale(.94); background: #e02b20; }
+.shutter[disabled] { opacity: .5; }
+
+.cam-save {
+  text-align: center;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  margin: 8px 16px 4px;
+}
+.cam-save.ok { background: #1f3d2b; color: #7bff9b; }
+.cam-save.err { background: #3d1f1f; color: #ff9b9b; }
+
+/* ============ / LIVE CAMERA ============ */
 
 .canvas-wrap {
   background: #000; border-radius: 12px; overflow: hidden;
@@ -105,3 +180,60 @@ input[type="text"] {
 .muted { color: var(--muted); font-size: 14px; }
 .hidden { display: none; }
 #gps-status { font-size: 13px; color: var(--muted); margin-bottom: 8px; word-break: break-all; }
+
+/* ============ FOOTER & ABOUT ============ */
+.app-footer {
+  text-align: center;
+  padding: 22px 16px 10px;
+  color: var(--muted);
+}
+.footer-note { font-size: 11px; color: var(--muted); }
+
+.link-btn {
+  width: 100%;
+  margin-top: 16px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.link-btn:active { color: var(--accent); }
+
+.about-logo {
+  width: 68px; height: 68px; border-radius: 18px;
+  background: linear-gradient(135deg, var(--accent), #ff9500);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 26px; color: #fff;
+  margin-bottom: 14px;
+}
+.about-hr { border: 0; border-top: 1px solid #3c4457; margin: 18px 0; }
+.about-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 8px 0; font-size: 14px; color: var(--txt);
+  border-bottom: 1px dashed #3a4154;
+}
+.about-row span:first-child { color: var(--muted); }
+.about-credit { margin-top: 18px; }
+.credit-badge {
+  font-size: 16px; font-weight: 600;
+  color: var(--txt);
+  background: linear-gradient(135deg, #ff3b30, #ff9500);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.credit-badge strong { font-weight: 800; }
+.dev-link { margin-top: 10px; }
+.dev-link a {
+  color: #7fd4ff;
+  font-size: 14px;
+  text-decoration: none;
+  border-bottom: 1px dashed #4a7f9e;
+  padding-bottom: 2px;
+}
+.dev-link a:active { color: var(--accent); }
+.about-back { margin-top: 18px; width: 100%; }
+/* ============ / FOOTER & ABOUT ============ */
