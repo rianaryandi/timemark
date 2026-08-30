@@ -467,6 +467,7 @@
 
   function paintStamp(dctx, W, H, opts) {
     const fs = Math.max(16, Math.min(42, (opts.size / 48) * Math.max(16, H * 0.018)));
+    const jamFont = Math.max(26, Math.min(170, Math.round(H * 0.052)));
     if (opts.style === "gedo") {
       paintStampGedo(dctx, W, H, opts, fs);
       return;
@@ -475,6 +476,9 @@
       paintStampTimemark(dctx, W, H, opts, fs);
       return;
     }
+    const style = opts.style || "classic";
+    const noBar = style === "plain";
+    const compact = style === "compact";
     // ---- build stamp rows ----
     const rows = [];
     if (opts.showTime) rows.push({ t: opts.timeStr, kind: "big" });
@@ -492,21 +496,49 @@
       wrapTextC(dctx, opts.cert, W - 90).forEach((l) => rows.push({ t: l, kind: "small" }));
     }
 
-    const rowH = (r) => r.kind === "big"
-      ? Math.round(fs * 1.9)
+const rowH = (r) => r.kind === "big"
+      ? Math.round(jamFont * 1.35)
       : (r.kind === "small" ? Math.round(fs * 1.3) : Math.round(fs * 1.4));
-    const lineH = Math.round(fs * 1.4);
 
     // ---- footer/header sized to content ----
     const logoWidth = opts.showLogo ? Math.round(fs * 1.5) + 14 : 0;
     const barH = rows.reduce((a, r) => a + rowH(r), 0) + 24;
     const barY = opts.pos === "top" ? 0 : H - barH;
-    dctx.fillStyle = "rgba(0,0,0,0.55)";
-    dctx.fillRect(0, barY, W, barH);
+    const baseY = opts.pos === "top" ? barH : H - barH;
+
+    // properti font tiap baris
+    const props = rows.map((r) => {
+      if (r.kind === "big")
+        return { f: "800 " + Math.round(jamFont) + "px system-ui, sans-serif", c: opts.color };
+      if (r.kind === "small")
+        return { f: "600 " + Math.round(fs * 0.68) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "rgba(190,203,217,0.85)" };
+      return { f: "700 " + Math.round(fs) + "px system-ui, sans-serif", c: opts.color };
+    });
+
+    // lebar teks terlebar (untuk blok kanan)
+    let maxW = 0;
+    if (compact) {
+      for (let i = 0; i < rows.length; i++) {
+        dctx.font = props[i].f;
+        maxW = Math.max(maxW, dctx.measureText(rows[i].t).width);
+      }
+    }
+
+    // ---- latar belakang stempel ----
+    if (!noBar) {
+      dctx.fillStyle = "rgba(0,0,0,0.55)";
+      if (compact) {
+        const blkW = maxW + 40;
+        const blkX = W - 20 - blkW;
+        roundRect(dctx, blkX, barY + 12, blkW, barH - 24, 12);
+        dctx.fill();
+      } else {
+        dctx.fillRect(0, barY, W, barH);
+      }
+    }
 
     // ---- logo badge ----
-    let x = 18;
-    const baseY = opts.pos === "top" ? barH : H - barH;
+    let x = compact ? W - 20 - maxW - 40 + 20 : 18;
     if (opts.showLogo) {
       const ly = opts.pos === "top" ? Math.round(fs * 1.0) + 10 : baseY + Math.round(fs * 1.0) + 6;
       x += drawLogo(dctx, x, ly, Math.round(fs * 1.2));
@@ -517,17 +549,10 @@
     let y = opts.pos === "top"
       ? Math.round(fs * 1.0) + 14
       : baseY + Math.round(fs * 1.0) + 14;
-    for (const r of rows) {
-      if (r.kind === "big") {
-        dctx.font = "800 " + Math.round(fs * 1.45) + "px system-ui, sans-serif";
-        dctx.fillStyle = opts.color;
-      } else if (r.kind === "small") {
-        dctx.font = "600 " + Math.round(fs * 0.68) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif";
-        dctx.fillStyle = "rgba(190,203,217,0.85)";
-      } else {
-        dctx.font = "700 " + Math.round(fs) + "px system-ui, sans-serif";
-        dctx.fillStyle = opts.color;
-      }
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      dctx.font = props[i].f;
+      dctx.fillStyle = props[i].c;
       dctx.fillText(r.t, x, y);
       y += rowH(r);
     }
@@ -1240,6 +1265,79 @@
   ["inpName", "inpCompany"].forEach((id) => {
     $(id).addEventListener("input", () => { draw(); });
   });
+
+  // Template stempel: deretan chip visual (tiruan konsep picker)
+  const TEMPLATES = [
+    { v: "classic", n: "Normal", d: "Bar penuh, jam besar" },
+    { v: "gedo", n: "GEDO", d: "Blok kiri, jam besar" },
+    { v: "timemark", n: "Timemark Asli", d: "Bar bawah lebar" },
+    { v: "plain", n: "Tanpa Bar", d: "Teks langsung" },
+    { v: "compact", n: "Blok Kanan", d: "Kecil di pojok" },
+  ];
+  function tplThumb(v) {
+    const c = document.createElement("canvas");
+    c.width = 72; c.height = 52;
+    const g = c.getContext("2d");
+    g.fillStyle = "#2a2a2e"; g.fillRect(0, 0, 72, 52);
+    g.fillStyle = "#fff";
+    if (v === "timemark") {
+      g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(0, 0, 72, 52);
+      g.font = "700 20px sans-serif"; g.fillText("10:21", 8, 46);
+      g.fillStyle = "#b0c4d8"; g.font = "9px sans-serif";
+      g.fillText("14-02-2026 Jl. Raya", 8, 16); g.fillText("Nama / Perusahaan", 8, 29);
+    } else if (v === "gedo") {
+      g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(0, 12, 62, 40);
+      g.fillStyle = "#fff"; g.font = "800 20px sans-serif"; g.fillText("10:21:47", 5, 42);
+      g.fillStyle = "#b0c4d8"; g.font = "9px sans-serif"; g.fillText("14-02-2026", 5, 8);
+    } else if (v === "compact") {
+      g.fillStyle = "rgba(0,0,0,.55)";
+      roundRect(g, 34, 4, 34, 44, 6); g.fill();
+      g.fillStyle = "#fff"; g.font = "800 12px sans-serif"; g.fillText("10:21", 37, 20);
+      g.fillStyle = "#b0c4d8"; g.font = "7px sans-serif";
+      g.fillText("Jalan 1", 37, 29); g.fillText("Nama", 37, 37);
+    } else if (v === "plain") {
+      g.font = "800 20px sans-serif"; g.fillText("10:21", 6, 38);
+      g.fillStyle = "#b0c4d8"; g.font = "9px sans-serif";
+      g.fillText("14-02-2026 Jl. Raya", 6, 12); g.fillText("Nama", 6, 25);
+    } else {
+      g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(0, 26, 72, 26);
+      g.fillStyle = "#fff"; g.font = "800 22px sans-serif"; g.fillText("10:21", 6, 49);
+      g.fillStyle = "#b0c4d8"; g.font = "9px sans-serif";
+      g.fillText("14-02-2026 Jl. Raya", 6, 14); g.fillText("Nama", 6, 24);
+    }
+    return c;
+  }
+  function initTplGrid() {
+    const grid = $("tpl-grid");
+    grid.innerHTML = "";
+    TEMPLATES.forEach((t) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tpl-chip";
+      b.dataset.v = t.v;
+      b.title = t.d;
+      b.appendChild(tplThumb(t.v));
+      const lb = document.createElement("span");
+      lb.className = "tpl-name";
+      lb.textContent = t.n;
+      b.appendChild(lb);
+      b.addEventListener("click", () => {
+        $("selStyle").value = t.v;
+        TEMPLATES.forEach((o) =>
+          grid.querySelector('[data-v="' + o.v + '"]').classList.toggle("active", o.v === t.v)
+        );
+        try { localStorage.setItem("tm_style", t.v); } catch (e) {}
+        draw();
+        if (camActive) updateCamOverlay();
+      });
+      grid.appendChild(b);
+    });
+    TEMPLATES.forEach((o) =>
+      grid.querySelector('[data-v="' + o.v + '"]').classList.toggle("active", o.v === $("selStyle").value)
+    );
+  }
+  try { const s = localStorage.getItem("tm_style"); if (s && $("selStyle").querySelector('option[value="' + s + '"]')) $("selStyle").value = s; } catch (e) {}
+  initTplGrid();
 
   // Always show GPS status box whenever editor is visible
   const origShow = show;
