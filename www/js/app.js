@@ -477,26 +477,29 @@
     }
     // ---- build stamp rows ----
     const rows = [];
-    if (opts.showTime) rows.push({ t: opts.timeStr, small: false });
-    if (opts.showDate) rows.push({ t: opts.dateStr, small: false });
-    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, small: true });
+    if (opts.showTime) rows.push({ t: opts.timeStr, kind: "big" });
+    if (opts.showDate) rows.push({ t: opts.dateStr, kind: "norm" });
+    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, kind: "small" });
     if (opts.address) {
       dctx.font = "600 " + Math.round(fs) + "px system-ui, sans-serif";
       const wrapped = wrapText(opts.address, W - 90);
-      wrapped.forEach((l) => rows.push({ t: l, small: false }));
+      wrapped.forEach((l) => rows.push({ t: l, kind: "norm" }));
     }
-    if (opts.company) rows.push({ t: "Perusahaan: " + opts.company, small: false });
-    if (opts.name) rows.push({ t: "Nama: " + opts.name, small: false });
+    if (opts.company) rows.push({ t: "Perusahaan: " + opts.company, kind: "norm" });
+    if (opts.name) rows.push({ t: "Nama: " + opts.name, kind: "norm" });
     if (opts.showCert) {
       dctx.font = "600 " + Math.round(fs * 0.82) + "px system-ui, sans-serif";
-      wrapTextC(dctx, opts.cert, W - 90).forEach((l) => rows.push({ t: l, small: true }));
+      wrapTextC(dctx, opts.cert, W - 90).forEach((l) => rows.push({ t: l, kind: "small" }));
     }
 
+    const rowH = (r) => r.kind === "big"
+      ? Math.round(fs * 1.9)
+      : (r.kind === "small" ? Math.round(fs * 1.3) : Math.round(fs * 1.4));
     const lineH = Math.round(fs * 1.4);
 
     // ---- footer/header sized to content ----
     const logoWidth = opts.showLogo ? Math.round(fs * 1.5) + 14 : 0;
-    const barH = rows.length * lineH + 24;
+    const barH = rows.reduce((a, r) => a + rowH(r), 0) + 24;
     const barY = opts.pos === "top" ? 0 : H - barH;
     dctx.fillStyle = "rgba(0,0,0,0.55)";
     dctx.fillRect(0, barY, W, barH);
@@ -509,13 +512,16 @@
       x += drawLogo(dctx, x, ly, Math.round(fs * 1.2));
     }
 
-    // ---- text rows (GPS & cert lebih kecil & samar) ----
+    // ---- text rows (jam paling besar, GPS & cert kecil) ----
     dctx.textBaseline = "alphabetic";
     let y = opts.pos === "top"
       ? Math.round(fs * 1.0) + 14
       : baseY + Math.round(fs * 1.0) + 14;
     for (const r of rows) {
-      if (r.small) {
+      if (r.kind === "big") {
+        dctx.font = "800 " + Math.round(fs * 1.45) + "px system-ui, sans-serif";
+        dctx.fillStyle = opts.color;
+      } else if (r.kind === "small") {
         dctx.font = "600 " + Math.round(fs * 0.68) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif";
         dctx.fillStyle = "rgba(190,203,217,0.85)";
       } else {
@@ -523,7 +529,7 @@
         dctx.fillStyle = opts.color;
       }
       dctx.fillText(r.t, x, y);
-      y += lineH;
+      y += rowH(r);
     }
   }
 
@@ -686,8 +692,15 @@
       return;
     }
     try {
+      const portrait = window.innerHeight >= window.innerWidth;
+      const vw = portrait ? 1080 : 1920;
+      const vh = portrait ? 1920 : 1080;
       camStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: camFacing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: {
+          facingMode: camFacing,
+          width: { ideal: vw, max: 3264 },
+          height: { ideal: vh, max: 3264 },
+        },
         audio: false,
       });
     } catch (err) {
@@ -764,12 +777,14 @@
 
     const fullEl = $("camaddrfull");
     const nearEl = $("camnear");
+    const v = $("camvideo");
+    const res = v.videoWidth && v.videoHeight ? "🔧 " + v.videoWidth + "×" + v.videoHeight + " px" : "";
     if (gps) {
       fullEl.textContent = opts.address || "📍 mencari alamat...";
-      nearEl.textContent = "±" + Math.round(gps.acc) + " m (" + opts.gpsStr + ")";
+      nearEl.textContent = "±" + Math.round(gps.acc) + " m (" + opts.gpsStr + ")" + (res ? " · " + res : "");
     } else {
       fullEl.textContent = "Aktifkan GPS & izinkan lokasi";
-      nearEl.textContent = "";
+      nearEl.textContent = res || "";
     }
     refreshMap();
   }
