@@ -68,11 +68,42 @@
           <span>📍 GPS</span>
           <label class="switch"><input type="checkbox" id="chkGps" checked><span class="slider"></span></label>
         </div>
+        <div class="chk-row" style="margin-top:10px;">
+          <span>🛡️ Anti-palsu</span>
+          <label class="switch"><input type="checkbox" id="chkCert" checked><span class="slider"></span></label>
+        </div>
       </div>
 
       <div class="stamp-item">
         <label for="txtAddress">Teks bebas / alamat</label>
         <input type="text" id="txtAddress" placeholder="Cth: Rumah, Jl. Merdeka 1">
+      </div>
+
+      <div class="stamp-item">
+        <label>Nama &amp; Perusahaan (seperti Timemark/GEDO)</label>
+        <input type="text" id="inpName" placeholder="Nama (cth: masgexo)">
+        <input type="text" id="inpCompany" placeholder="Perusahaan (cth: XA-GDDO STORE)" style="margin-top:8px;">
+      </div>
+
+      <div class="stamp-item">
+        <label>Logo gambar perusahaan (opsional)</label>
+        <div class="logo-row">
+          <input type="file" id="inpLogoFile" accept="image/*">
+          <button type="button" id="btnLogoClear" class="link-btn logo-clear">✕ hapus</button>
+        </div>
+        <small class="hmut">Gunakan PNG transparan (cth: logo XA-GDDO). Aktifkan lewat toggle 🖼️ Logo. Tanpa logo, tetap tercetak teks "TM".</small>
+      </div>
+
+      <div class="stamp-item">
+        <label>Filter foto</label>
+        <select id="selFilter">
+          <option value="none" selected>Tanpa filter</option>
+          <option value="warm">Hangat (warm)</option>
+          <option value="vivid">Kontras (vivid)</option>
+          <option value="bw">Hitam-putih</option>
+          <option value="sepia">Sepia</option>
+          <option value="cool">Biru (cool)</option>
+        </select>
       </div>
 
       <div class="stamp-item">
@@ -89,6 +120,15 @@
           </select>
           <input type="color" id="txtColor" value="#ff3b30" title="Warna stempel">
         </div>
+      </div>
+
+      <div class="stamp-item">
+        <label>Gaya stempel</label>
+        <select id="selStyle">
+          <option value="classic" selected>Normal — bar penuh atas/bawah</option>
+          <option value="gedo">GEDO — blok pojok kiri, jam besar + rincian kecil</option>
+          <option value="timemark">Timemark Asli — bar bawah lebar, jam super besar putih</option>
+        </select>
       </div>
     </div>
 
@@ -107,23 +147,56 @@
   <section id="cam" class="screen">
     <div class="cam-stage">
       <video id="camvideo" autoplay playsinline muted></video>
-      <div id="cam-top" class="cam-bar top">
-        <div id="camdate" class="cam-chip hidden">--/--/----</div>
-        <div id="camgps" class="cam-chip hidden">📍 mencari lokasi...</div>
-      </div>
+      <img id="camlogo" class="cam-logo hidden" alt="">
+      <div id="camrec" class="camrec hidden">● REC 00:00</div>
       <div id="cam-bottom" class="cam-bar bottom">
-        <div id="camtime" class="cam-chip big hidden">--:--:--</div>
-        <div id="camaddr" class="cam-chip addr hidden">alamat / teks</div>
+        <div class="cam-hud">
+          <div id="camtime" class="cam-hud-line hl hidden">--:--:--</div>
+          <div id="camdate" class="cam-hud-line hidden">--/--/----</div>
+          <div id="camgps" class="cam-hud-line hidden">📍 mencari lokasi…</div>
+          <div id="camaddr" class="cam-hud-line hidden">alamat / teks</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cam-info">
+      <canvas id="cammap" width="264" height="264"></canvas>
+      <div class="cam-info-addr">
+        <div class="cam-info-label">🗺️ Map · 📍 Real-time</div>
+        <div id="camaddrfull" class="cam-info-text">Aktifkan GPS &amp; izinkan lokasi</div>
+        <div id="camnear" class="cam-info-near"></div>
       </div>
     </div>
 
     <div class="cam-controls">
       <button id="btnFlip" class="cam-round" title="Ganti kamera">🔄</button>
       <button id="btnShutter" class="shutter" title="Ambil foto"></button>
+      <button id="btnRecord" class="cam-round rec" title="Rekam video">🎥</button>
       <button id="btnCamBack" class="cam-round" title="Tutup kamera">✕</button>
     </div>
 
+    <div class="cam-recrow">
+      <span>Kualitas video:</span>
+      <select id="selRecQ">
+        <option value="1280" selected>Standar (1280px)</option>
+        <option value="1920">HD (1920px)</option>
+      </select>
+    </div>
+
     <div id="camsave" class="cam-save hidden"></div>
+  </section>
+
+  <!-- Video preview setelah rekaman -->
+  <section id="recplay" class="screen">
+    <div class="card center">
+      <h3>🎬 Rekaman siap</h3>
+      <video id="recvideo" controls playsinline></video>
+      <p class="muted">Cek dulu, lalu simpan ke galeri.</p>
+      <div class="actions">
+        <button id="recSave" class="btn primary">💾 Simpan</button>
+        <button id="recDiscard" class="btn ghost">↻ Rekam Lagi</button>
+      </div>
+    </div>
   </section>
 
   <!-- About / Info Aplikasi -->
