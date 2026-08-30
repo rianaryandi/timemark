@@ -9,10 +9,20 @@
   let gps = null;          // {lat, lon, accuracy}
   let isCapacitor = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
-  const screens = ["mode-pick", "editor", "done"];
+  // ---------- LIVE CAMERA STATE ----------
+  let camStream = null;
+  let camFacing = "environment";
+  let camActive = false;
+  let camTimer = null;
+  let camSaving = false;
+
+  const screens = ["mode-pick", "editor", "done", "cam", "about"];
   function show(name) {
     screens.forEach((s) => $(s).classList.toggle("active", s === name));
   }
+
+  $("btnAbout").addEventListener("click", () => show("about"));
+  $("btnAboutBack").addEventListener("click", () => show("mode-pick"));
 
   // ============ IMAGE LOADING ============
   function loadFileOnCanvas(file) {
@@ -45,6 +55,10 @@
   document.querySelectorAll(".mode-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const mode = btn.dataset.mode;
+      if (mode === "live") {
+        startCamera();
+        return;
+      }
       if (isCapacitor) {
         pickFromNative(mode);
         return;
@@ -52,6 +66,7 @@
       const fi = $("fileInput");
       if (mode === "camera") {
         fi.setAttribute("capture", "environment");
+        fi.removeAttribute("multiple");
       } else {
         fi.removeAttribute("capture");
         fi.setAttribute("multiple", "true");
@@ -74,6 +89,7 @@
         allowEditing: false,
         resultType: "DATA_URL",
         source,
+        correctOrientation: true,
       });
 
       if (photo && photo.dataUrl) {
@@ -113,12 +129,35 @@
           "📍 " + gps.lat.toFixed(6) + ", " + gps.lon.toFixed(6) +
           " (±" + Math.round(gps.acc) + " m)";
         draw();
+        updateCamOverlay();
       },
       (err) => {
         $("gps-status").textContent = "Lokasi belum tersedia. Aktifkan GPS & izinkan lokasi.";
+        updateCamOverlay();
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
+  }
+
+  // ============ STAMP OPTIONS / LINES ============
+  function buildOptions(now) {
+    return {
+      timeStr: now.toLocaleTimeString("id-ID", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      }),
+      dateStr: now.toLocaleDateString("id-ID", {
+        day: "2-digit", month: "2-digit", year: "numeric",
+      }),
+      gpsStr: gps ? gps.lat.toFixed(6) + ", " + gps.lon.toFixed(6) : null,
+      address: $("txtAddress").value.trim(),
+      showLogo: $("chkLogo").checked,
+      showTime: $("chkTime").checked,
+      showDate: $("chkDate").checked,
+      showGps: $("chkGps").checked,
+      pos: $("selPos").value,
+      color: $("txtColor").value,
+      size: parseInt($("selSize").value, 10) || 48,
+    };
   }
 
   // ============ REDRAW WITH STAMP ============
@@ -139,6 +178,56 @@
     return lines;
   }
 
+  function paintStamp(dctx, W, H, opts) {
+    // relative font size
+    const fs = Math.max(20, Math.min(90, (opts.size / 48) * Math.max(22, H * 0.045)));
+
+    // ---- build stamp lines ----
+    const lines = [];
+    if (opts.showTime) lines.push(opts.timeStr);
+    if (opts.showDate) lines.push(opts.dateStr);
+    if (opts.showGps && opts.gpsStr) lines.push(opts.gpsStr);
+    if (opts.address) {
+      dctx.font = "600 " + Math.round(fs) + "px system-ui, sans-serif";
+      const wrapped = wrapText(opts.address, W - 90);
+      wrapped.forEach((l) => lines.push(l));
+    }
+
+    const lineH = Math.round(fs * 1.4);
+
+    // ---- footer/header sized to content ----
+    const logoWidth = opts.showLogo ? Math.round(fs * 1.5) + 14 : 0;
+    const barH = lines.length * lineH + 24;
+    const barY = opts.pos === "top" ? 0 : H - barH;
+    dctx.fillStyle = "rgba(0,0,0,0.55)";
+    dctx.fillRect(0, barY, W, barH);
+
+    // ---- logo badge ----
+    let x = 18;
+    const baseY = opts.pos === "top" ? barH : H - barH;
+    if (opts.showLogo) {
+      dctx.save();
+      dctx.fillStyle = "#ff9500";
+      dctx.font = "800 " + Math.round(fs * 1.2) + "px system-ui, sans-serif";
+      dctx.textBaseline = "alphabetic";
+      dctx.fillText("TM", x, opts.pos === "top" ? Math.round(fs * 1.0) + 10 : baseY + Math.round(fs * 1.0) + 6);
+      dctx.restore();
+      x += (logoWidth - 4);
+    }
+
+    // ---- text lines ----
+    dctx.textBaseline = "alphabetic";
+    let y = opts.pos === "top"
+      ? Math.round(fs * 1.0) + 14
+      : baseY + Math.round(fs * 1.0) + 14;
+    dctx.font = "700 " + Math.round(fs) + "px system-ui, sans-serif";
+    dctx.fillStyle = opts.color;
+    for (const ln of lines) {
+      dctx.fillText(ln, x, y);
+      y += lineH;
+    }
+  }
+
   function draw() {
     if (!img) return;
 
@@ -150,72 +239,117 @@
 
     // base image
     ctx.drawImage(img, 0, 0, w, h);
-
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString("id-ID", {
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-    });
-    const dateStr = now.toLocaleDateString("id-ID", {
-      day: "2-digit", month: "2-digit", year: "numeric",
-    });
-
-    const showLogo = $("chkLogo").checked;
-    const showTime = $("chkTime").checked;
-    const showDate = $("chkDate").checked;
-    const showGps = $("chkGps").checked;
-    const address = $("txtAddress").value.trim();
-    const pos = $("selPos").value;
-    const color = $("txtColor").value;
-    const size = parseInt($("selSize").value, 10) || 48;
-
-    // font size relative to image height
-    const fs = Math.max(20, Math.min(90, (size / 48) * Math.max(22, h * 0.045)));
-
-    // ---- build stamp lines ----
-    const lines = [];
-    if (showTime) lines.push(timeStr);
-    if (showDate) lines.push(dateStr);
-    if (showGps && gps) lines.push(gps.lat.toFixed(6) + ", " + gps.lon.toFixed(6));
-    if (address) {
-      ctx.font = "600 " + Math.round(fs) + "px system-ui, sans-serif";
-      const wrapped = wrapText(address, w - 90);
-      wrapped.forEach((l) => lines.push(l));
-    }
-
-    const lineH = Math.round(fs * 1.4);
-
-    // ---- footer/header sized to content ----
-    const logoWidth = showLogo ? Math.round(fs * 1.5) + 14 : 0;
-    const barH = lines.length * lineH + 24;
-    const barY = pos === "top" ? 0 : h - barH;
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillRect(0, barY, w, barH);
-
-    // ---- logo badge ----
-    let x = 18;
-    let baseY = pos === "top" ? barH : h - barH;
-    if (showLogo) {
-      ctx.save();
-      ctx.fillStyle = "#ff9500";
-      ctx.font = "800 " + Math.round(fs * 1.2) + "px system-ui, sans-serif";
-      ctx.textBaseline = "alphabetic";
-      ctx.fillText("TM", x, pos === "top" ? Math.round(fs * 1.0) + 10 : baseY + Math.round(fs * 1.0) + 6);
-      ctx.restore();
-      x += (logoWidth - 4);
-    }
-
-    // ---- text lines ----
-    ctx.textBaseline = "alphabetic";
-    let y = pos === "top"
-      ? Math.round(fs * 1.0) + 14
-      : baseY + Math.round(fs * 1.0) + 14;
-    ctx.font = "700 " + Math.round(fs) + "px system-ui, sans-serif";
-    ctx.fillStyle = color;
-    for (const ln of lines) {
-      ctx.fillText(ln, x, y);
-      y += lineH;
-    }
+    paintStamp(ctx, w, h, buildOptions(new Date()));
   }
+
+  // ============ LIVE CAMERA ============
+  async function startCamera() {
+    stopCamera();
+    camFacing = camFacing || "environment";
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      show("mode-pick");
+      alert("Kamera tidak didukung di browser/WebView ini. Coba mode 'Kamera' biasa atau pakai APK.");
+      return;
+    }
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: camFacing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+    } catch (err) {
+      show("mode-pick");
+      alert("Kamera tidak bisa dibuka: " + (err && err.message ? err.message : err) +
+        "\nPastikan izin kamera diizinkan & gunakan https (di APK otomatis).");
+      return;
+    }
+    const video = $("camvideo");
+    video.srcObject = camStream;
+    camActive = true;
+    camSaving = false;
+    show("cam");
+    hideCamsave();
+    updateCamOverlay();
+    if (camTimer) clearInterval(camTimer);
+    camTimer = setInterval(updateCamOverlay, 250);
+    try { await video.play(); } catch (e) { /* pasrah */ }
+  }
+
+  function stopCamera() {
+    if (camTimer) { clearInterval(camTimer); camTimer = null; }
+    if (camStream) {
+      const tracks = camStream.getTracks();
+      tracks.forEach((t) => t.stop());
+      camStream = null;
+    }
+    $("camvideo").srcObject = null;
+    camActive = false;
+  }
+
+  function updateCamOverlay() {
+    if (!camActive) return;
+    const opts = buildOptions(new Date());
+
+    const dateEl = $("camdate");
+    const gpsEl = $("camgps");
+    const timeEl = $("camtime");
+    const addrEl = $("camaddr");
+
+    dateEl.classList.toggle("hidden", !opts.showDate);
+    if (opts.showDate) dateEl.textContent = "📅 " + opts.dateStr;
+
+    timeEl.classList.toggle("hidden", !opts.showTime);
+    if (opts.showTime) timeEl.textContent = opts.timeStr;
+
+    if (opts.showGps) {
+      gpsEl.classList.remove("hidden");
+      gpsEl.textContent = gps ? "📍 " + opts.gpsStr : "📍 mencari lokasi...";
+    } else {
+      gpsEl.classList.add("hidden");
+    }
+
+    addrEl.classList.toggle("hidden", !opts.address);
+    if (opts.address) addrEl.textContent = opts.address;
+  }
+
+  function showCamsave(msg, ok) {
+    const el = $("camsave");
+    el.textContent = msg;
+    el.className = "cam-save visible " + (ok ? "ok" : "err");
+    setTimeout(hideCamsave, 2600);
+  }
+  function hideCamsave() {
+    $("camsave").className = "cam-save hidden";
+  }
+
+  $("btnShutter").addEventListener("click", () => {
+    if (!camActive || camSaving) return;
+    const video = $("camvideo");
+    if (!video.videoWidth || !video.videoHeight) return;
+    camSaving = true;
+
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    const tmp = document.createElement("canvas");
+    tmp.width = w;
+    tmp.height = h;
+    const tctx = tmp.getContext("2d");
+    tctx.drawImage(video, 0, 0, w, h);
+    paintStamp(tctx, w, h, buildOptions(new Date()));
+
+    const name = makeFilename();
+    saveCanvas(tmp, name, "camera");
+  });
+
+  $("btnFlip").addEventListener("click", () => {
+    camFacing = camFacing === "environment" ? "user" : "environment";
+    startCamera();
+  });
+
+  $("btnCamBack").addEventListener("click", () => {
+    stopCamera();
+    hideCamsave();
+    show("mode-pick");
+  });
 
   // ============ SAVE ============
   function makeFilename() {
@@ -229,8 +363,8 @@
     );
   }
 
-  function canvasToBlob(cb) {
-    return cv.toBlob(cb, "image/jpeg", 0.95);
+  function canvasToBlob(canvas, cb) {
+    return canvas.toBlob(cb, "image/jpeg", 0.95);
   }
 
   function webDownload(blob, name) {
@@ -244,8 +378,48 @@
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
-  // Native save to gallery via Capacitor Filesystem
+  function saveCanvas(canvas, name, from) {
+    canvasToBlob(canvas, (blob) => {
+      if (!blob) {
+        if (from === "camera") { camSaving = false; showCamsave("Gagal memproses gambar!", false); }
+        else { $("done-msg").textContent = "Gagal memproses gambar."; show("done"); }
+        return;
+      }
+      if (isCapacitor) {
+        nativeSave(blob, name).then((res) => {
+          if (from === "camera") {
+            camSaving = false;
+            showCamsave(res.msg, res.ok);
+          } else {
+            $("done-msg").textContent = res.msg;
+            show("done");
+          }
+        });
+        return;
+      }
+      webDownload(blob, name);
+      if (from === "camera") {
+        camSaving = false;
+        showCamsave("⬇️ Terunduh ke folder Download", true);
+      } else {
+        $("done-msg").textContent = '⚠️ Di browser, file terunduh ke folder "Download". Pakai APK versi Capacitor agar otomatis ke galeri.';
+        show("done");
+      }
+    });
+  }
+
+  // Native save: MediaStore → galeri/penyimpanan kamera (custom plugin GallerySave),
+  // fallback: Filesystem Documents.
   async function nativeSave(blob, name) {
+    try {
+      const base64 = await blobToBase64(blob);
+      const gs = plugin("GallerySave");
+      if (gs && gs.save) {
+        await gs.save({ data: base64, fileName: name, toCamera: true });
+        return { ok: true, msg: "✅ Foto tersimpan ke penyimpanan kamera (DCIM/Camera)." };
+      }
+    } catch (e) { /* plugin tidak tersedia → fallback */ }
+
     try {
       const Filesystem = plugin("Filesystem");
       const base64 = await blobToBase64(blob);
@@ -254,21 +428,10 @@
         data: base64,
         directory: "DOCUMENTS",
       });
-      // Save to pictures album using Media plugin (if available)
-      try {
-        const Media = plugin("Media");
-        await Media.savePhoto({
-          fileName: name,
-          albumIdentifier: undefined,
-        });
-      } catch (e) {
-        // Media plugin optional - fallback docs folder
-      }
-      $("done-msg").textContent = "✅ Foto tersimpan ke galeri (Documents/Pictures).";
+      return { ok: true, msg: "✅ Foto tersimpan ke folder Documents (plugin kamera tidak aktif)." };
     } catch (err) {
-      $("done-msg").textContent = "⚠️ Gagal simpan otomatis: " + (err && err.message ? err.message : err);
+      return { ok: false, msg: "⚠️ Gagal simpan otomatis: " + (err && err.message ? err.message : err) };
     }
-    show("done");
   }
 
   function blobToBase64(blob) {
@@ -282,22 +445,7 @@
 
   $("btnSave").addEventListener("click", () => {
     draw();
-    const name = makeFilename();
-
-    if (isCapacitor) {
-      canvasToBlob((blob) => {
-        if (blob) nativeSave(blob, name);
-        else { $("done-msg").textContent = "Gagal memproses gambar."; show("done"); }
-      });
-      return;
-    }
-
-    // Web: download
-    canvasToBlob((blob) => {
-      if (blob) webDownload(blob, name);
-    });
-    $("done-msg").textContent = '⚠️ Di browser, file terunduh ke folder "Download". Pakai APK versi Capacitor agar otomatis ke galeri.';
-    show("done");
+    saveCanvas(cv, makeFilename(), "editor");
   });
 
   $("btnBack").addEventListener("click", () => show("editor"));
@@ -316,7 +464,7 @@
     $(id).addEventListener("change", draw);
     $(id).addEventListener("input", draw);
   });
-  $("txtAddress").addEventListener("input", draw);
+  $("txtAddress").addEventListener("input", () => { draw(); if (camActive) updateCamOverlay(); });
 
   // Always show GPS status box whenever editor is visible
   const origShow = show;
@@ -328,4 +476,7 @@
   };
 
   watchGps();
+
+  // Live clock: stempel di galeri ikut berjalan tiap detik seperti timestamp camera
+  setInterval(() => { if (img) draw(); }, 500);
 })();
