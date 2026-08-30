@@ -25,6 +25,7 @@
     bw: "grayscale(1) contrast(1.08)",
     sepia: "sepia(.85) saturate(1.1)",
     cool: "hue-rotate(190deg) saturate(1.15) brightness(1.02)",
+    night: "brightness(.9) contrast(1.18) saturate(1.2) brightness(.85) sepia(.12)",
   };
 
   const screens = ["mode-pick", "editor", "done", "cam", "recplay", "about"];
@@ -144,6 +145,77 @@
         (e) => { clearTimeout(t); rej(e); }
       );
     });
+  }
+
+  // ============ BATCH STAMP (banyak foto dari galeri) ============
+  $("btnBatch").addEventListener("click", () => {
+    $("inpBatch").value = "";
+    $("inpBatch").click();
+  });
+
+  $("inpBatch").addEventListener("change", async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    const st = $("batch-status");
+    if (!files.length) return;
+    st.classList.remove("hidden");
+    const total = files.length;
+    let done = 0, ok = 0;
+    st.textContent = "Menyiapkan 0/" + total + "...";
+    for (let i = 0; i < total; i++) {
+      try {
+        const im = await fileToImage(files[i]);
+        const w = im.naturalWidth, h = im.naturalHeight;
+        if (!w || !h) throw new Error("dimensi kosong");
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const tctx = c.getContext("2d");
+        tctx.drawImage(im, 0, 0, w, h);
+        paintStamp(tctx, w, h, buildOptions(new Date()));
+        const blob = await canvasToBlobP(c);
+        if (!blob) throw new Error("gagal encode");
+        const name = batchFileName(i + 1);
+        let res;
+        if (isCapacitor) {
+          res = await nativeSave(blob, name);
+        } else {
+          webDownload(blob, name);
+          res = { ok: true };
+        }
+        if (res.ok) ok++;
+      } catch (err) { /* lewati file bermasalah */ }
+      done++;
+      st.textContent = "Memproses " + done + "/" + total + "...";
+    }
+    st.textContent = "✅ Selesai: " + ok + " dari " + total + " foto di-stempel & disimpan.";
+    setTimeout(() => { st.classList.add("hidden"); }, 6000);
+  });
+
+  function fileToImage(file) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => rej(new Error("gagal muat gambar"));
+        im.src = fr.result;
+      };
+      fr.onerror = () => rej(new Error("gagal baca file"));
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function canvasToBlobP(c) {
+    return new Promise((res) => c.toBlob(res, "image/jpeg", 0.94));
+  }
+
+  function batchFileName(idx) {
+    const now = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    const ts = now.getFullYear() + "-" + p(now.getMonth() + 1) + "-" + p(now.getDate()) +
+      "_" + p(now.getHours()) + p(now.getMinutes()) + p(now.getSeconds());
+    return "timemark_" + ts + "_" + idx + ".jpg";
   }
 
   function plugin(name) {
@@ -390,17 +462,11 @@
       dctx.drawImage(logoImg, x, y - h, w, h);
       return w + 8;
     }
-    dctx.save();
-    dctx.fillStyle = "#ff9500";
-    dctx.font = "800 " + Math.round(px) + "px system-ui, sans-serif";
-    dctx.textBaseline = "alphabetic";
-    dctx.fillText("TM", x, y);
-    dctx.restore();
-    return Math.round(px * 1.5);
+    return 0;
   }
 
   function paintStamp(dctx, W, H, opts) {
-    const fs = Math.max(20, Math.min(90, (opts.size / 48) * Math.max(22, H * 0.045)));
+    const fs = Math.max(16, Math.min(42, (opts.size / 48) * Math.max(16, H * 0.018)));
     if (opts.style === "gedo") {
       paintStampGedo(dctx, W, H, opts, fs);
       return;
@@ -409,28 +475,28 @@
       paintStampTimemark(dctx, W, H, opts, fs);
       return;
     }
-    // ---- build stamp lines ----
-    const lines = [];
-    if (opts.showTime) lines.push(opts.timeStr);
-    if (opts.showDate) lines.push(opts.dateStr);
-    if (opts.showGps && opts.gpsStr) lines.push(opts.gpsStr);
+    // ---- build stamp rows ----
+    const rows = [];
+    if (opts.showTime) rows.push({ t: opts.timeStr, small: false });
+    if (opts.showDate) rows.push({ t: opts.dateStr, small: false });
+    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, small: true });
     if (opts.address) {
       dctx.font = "600 " + Math.round(fs) + "px system-ui, sans-serif";
       const wrapped = wrapText(opts.address, W - 90);
-      wrapped.forEach((l) => lines.push(l));
+      wrapped.forEach((l) => rows.push({ t: l, small: false }));
     }
-    if (opts.company) lines.push("Perusahaan: " + opts.company);
-    if (opts.name) lines.push("Nama: " + opts.name);
+    if (opts.company) rows.push({ t: "Perusahaan: " + opts.company, small: false });
+    if (opts.name) rows.push({ t: "Nama: " + opts.name, small: false });
     if (opts.showCert) {
       dctx.font = "600 " + Math.round(fs * 0.82) + "px system-ui, sans-serif";
-      wrapTextC(dctx, opts.cert, W - 90).forEach((l) => lines.push(l));
+      wrapTextC(dctx, opts.cert, W - 90).forEach((l) => rows.push({ t: l, small: true }));
     }
 
     const lineH = Math.round(fs * 1.4);
 
     // ---- footer/header sized to content ----
     const logoWidth = opts.showLogo ? Math.round(fs * 1.5) + 14 : 0;
-    const barH = lines.length * lineH + 24;
+    const barH = rows.length * lineH + 24;
     const barY = opts.pos === "top" ? 0 : H - barH;
     dctx.fillStyle = "rgba(0,0,0,0.55)";
     dctx.fillRect(0, barY, W, barH);
@@ -443,15 +509,20 @@
       x += drawLogo(dctx, x, ly, Math.round(fs * 1.2));
     }
 
-    // ---- text lines ----
+    // ---- text rows (GPS & cert lebih kecil & samar) ----
     dctx.textBaseline = "alphabetic";
     let y = opts.pos === "top"
       ? Math.round(fs * 1.0) + 14
       : baseY + Math.round(fs * 1.0) + 14;
-    dctx.font = "700 " + Math.round(fs) + "px system-ui, sans-serif";
-    dctx.fillStyle = opts.color;
-    for (const ln of lines) {
-      dctx.fillText(ln, x, y);
+    for (const r of rows) {
+      if (r.small) {
+        dctx.font = "600 " + Math.round(fs * 0.68) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif";
+        dctx.fillStyle = "rgba(190,203,217,0.85)";
+      } else {
+        dctx.font = "700 " + Math.round(fs) + "px system-ui, sans-serif";
+        dctx.fillStyle = opts.color;
+      }
+      dctx.fillText(r.t, x, y);
       y += lineH;
     }
   }
@@ -473,7 +544,7 @@
     const timeSize = Math.round(fs * 2.0);
     if (opts.showTime) rows.push({ t: opts.timeStr, f: "800 " + timeSize + "px system-ui, sans-serif", c: "#ffffff" });
     if (opts.showDate) rows.push({ t: opts.dateStr, f: "700 " + Math.round(fs * 0.9) + "px system-ui, sans-serif", c: "#f3f6fd" });
-    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, f: "600 " + Math.round(fs * 0.62) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "#7fd4ff" });
+    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, f: "500 " + Math.round(fs * 0.5) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "#9fb0c4" });
     if (opts.address) {
       wrapText(opts.address, W - pad * 2 - 12).forEach((l) =>
         rows.push({ t: l, f: "600 " + Math.round(fs * 0.72) + "px system-ui, sans-serif", c: "#ffffff" })
@@ -541,7 +612,7 @@
         rows.push({ t: l, f: "600 " + infoF + "px system-ui, sans-serif", c: "#ffffff" })
       );
     }
-    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, f: "600 " + coordF + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "#7fd4ff" });
+    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, f: "500 " + Math.round(fs * 0.55) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "#9fb0c4" });
     if (opts.company) rows.push({ t: "Perusahaan: " + opts.company, f: "600 " + coordF + "px system-ui, sans-serif", c: "#ffd27a" });
     if (opts.name) rows.push({ t: "Nama: " + opts.name, f: "600 " + coordF + "px system-ui, sans-serif", c: "#ffd27a" });
     if (!rows.length) rows.push({ t: opts.timeStr || opts.dateStr || "•", f: "800 " + timeF + "px system-ui, sans-serif", c: "#ffffff" });
@@ -558,17 +629,10 @@
     dctx.fillStyle = "rgba(0,0,0,0.62)";
     dctx.fillRect(0, barY, W, barH);
 
-    if (opts.showLogo) {
+    if (opts.showLogo && logoReady && logoImg) {
       const lx = W - logoW - 14;
       const ly = opts.pos === "top" ? pt + 4 : H - pb - logoH;
-      if (logoReady && logoImg) {
-        dctx.drawImage(logoImg, lx, ly, logoW, logoH);
-      } else {
-        dctx.fillStyle = "#ff9500";
-        dctx.font = "800 " + Math.round(logoH * 0.92) + "px system-ui, sans-serif";
-        dctx.textBaseline = "alphabetic";
-        dctx.fillText("TM", lx, ly + Math.round(logoH * 0.9));
-      }
+      dctx.drawImage(logoImg, lx, ly, logoW, logoH);
     }
 
     let y = barY + pt + hPx[0];
