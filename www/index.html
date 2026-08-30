@@ -43,6 +43,11 @@
           </span>
         </button>
       </div>
+      <button id="btnBatch" class="btn ghost" style="margin-top:12px;">
+        📁 Stempel Banyak Foto (galeri)
+      </button>
+      <input type="file" id="inpBatch" accept="image/*" multiple class="hidden">
+      <p id="batch-status" class="hidden" style="font-size:12px;color:var(--muted);margin-top:8px;"></p>
       <button id="btnAbout" class="link-btn">ℹ️ Info Aplikasi &amp; Pengembang</button>
     </div>
   </section>
@@ -103,6 +108,7 @@
           <option value="bw">Hitam-putih</option>
           <option value="sepia">Sepia</option>
           <option value="cool">Biru (cool)</option>
+          <option value="night">🌙 Malam (night)</option>
         </select>
       </div>
 
@@ -118,7 +124,7 @@
             <option value="48" selected>Sedang</option>
             <option value="64">Besar</option>
           </select>
-          <input type="color" id="txtColor" value="#ff3b30" title="Warna stempel">
+          <input type="color" id="txtColor" value="#ffffff" title="Warna stempel">
         </div>
       </div>
 
