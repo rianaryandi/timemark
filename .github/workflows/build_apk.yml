@@ -39,6 +39,12 @@ jobs:
           MF="android/app/src/main/AndroidManifest.xml"
           grep -q "ACCESS_FINE_LOCATION" "$MF" || sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n\n    <application#' "$MF"
 
+      - name: Pasang plugin MediaStore (simpan ke kamera/DCIM)
+        run: |
+          mkdir -p android/app/src/main/java/com/timemark/foto
+          cp android-overlay/com/timemark/foto/GallerySave.java android/app/src/main/java/com/timemark/foto/GallerySave.java
+          cp android-overlay/com/timemark/foto/MainActivity.java android/app/src/main/java/com/timemark/foto/MainActivity.java
+
       - name: Build APK (debug)
         run: |
           cd android
