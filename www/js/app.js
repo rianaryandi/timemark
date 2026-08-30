@@ -16,7 +16,18 @@
   let camTimer = null;
   let camSaving = false;
 
-  const screens = ["mode-pick", "editor", "done", "cam", "about"];
+  let logoImg = null;
+  let logoReady = false;
+  const FILTERS = {
+    none: "none",
+    warm: "sepia(.35) saturate(1.35) contrast(1.05) brightness(1.02)",
+    vivid: "saturate(1.55) contrast(1.12)",
+    bw: "grayscale(1) contrast(1.08)",
+    sepia: "sepia(.85) saturate(1.1)",
+    cool: "hue-rotate(190deg) saturate(1.15) brightness(1.02)",
+  };
+
+  const screens = ["mode-pick", "editor", "done", "cam", "recplay", "about"];
   function show(name) {
     screens.forEach((s) => $(s).classList.toggle("active", s === name));
   }
@@ -77,35 +88,62 @@
 
   // ============ NATIVE (CAPACITOR) PICKING ============
   async function pickFromNative(mode) {
-    try {
-      const plugin = window.Capacitor.Plugins.Camera;
-      if (!plugin) {
-        alert("Plugin Camera tidak tersedia. Pastikan @capacitor/camera terpasang.");
-        return;
-      }
-      const source = mode === "camera" ? "CAMERA" : "PHOTOS";
-      const photo = await plugin.getPhoto({
-        quality: 95,
-        allowEditing: false,
-        resultType: "DATA_URL",
-        source,
-        correctOrientation: true,
-      });
-
-      if (photo && photo.dataUrl) {
-        const im = new Image();
-        im.onload = () => {
-          img = im;
-          draw();
-          show("editor");
-          $("gps-box").classList.remove("hidden");
-          watchGps();
-        };
-        im.src = photo.dataUrl;
-      }
-    } catch (err) {
-      alert("Gagal mengambil foto: " + (err && err.message ? err.message : err));
+    const plugin = window.Capacitor.Plugins.Camera;
+    if (!plugin) {
+      alert("Plugin Camera tidak tersedia. Pastikan @capacitor/camera terpasang.");
+      return;
     }
+    const source = mode === "camera" ? "CAMERA" : "PHOTOS";
+    $("gps-status").textContent =
+      mode === "camera" ? "Menyiapkan kamera..." : "Menyiapkan galeri...";
+    let photo;
+    try {
+      photo = await withTimeout(
+        plugin.getPhoto({
+          quality: 92,
+          allowEditing: false,
+          resultType: "URI",
+          source,
+          correctOrientation: true,
+        }),
+        50000
+      );
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      if (/cancel/i.test(msg) || /batal/i.test(msg)) return;
+      alert("Gagal mengambil foto: " + msg);
+      return;
+    }
+    if (!photo) return;
+    $("gps-status").textContent = "Memproses foto...";
+    const src =
+      photo.webPath ||
+      photo.dataUrl ||
+      (photo.base64String ? "data:image/jpeg;base64," + photo.base64String : "");
+    if (!src) {
+      alert("Foto tidak terbaca dari galeri. Coba foto lain.");
+      return;
+    }
+    const im = new Image();
+    im.onload = () => {
+      img = im;
+      draw();
+      show("editor");
+      $("gps-box").classList.remove("hidden");
+      watchGps();
+    };
+    im.onerror = () => alert("Gagal memuat foto yang dipilih.");
+    im.src = src;
+  }
+
+  function withTimeout(promise, ms) {
+    return new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error("timeout")), ms);
+      promise.then(
+        (v) => { clearTimeout(t); res(v); },
+        (e) => { clearTimeout(t); rej(e); }
+      );
+    });
   }
 
   function plugin(name) {
@@ -130,6 +168,7 @@
           " (±" + Math.round(gps.acc) + " m)";
         draw();
         updateCamOverlay();
+        scheduleGeo();
       },
       (err) => {
         $("gps-status").textContent = "Lokasi belum tersedia. Aktifkan GPS & izinkan lokasi.";
@@ -137,6 +176,149 @@
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
+  }
+
+  // ============ ALAMAT OTOMATIS (reverse geocode) ============
+  let geoAddr = "";
+  let geoBusy = false;
+  let lastGeoKey = null;
+  let geoTimer = null;
+
+  function scheduleGeo() {
+    if (!gps) return;
+    const key = gps.lat.toFixed(4) + "," + gps.lon.toFixed(4);
+    if (key === lastGeoKey) return;
+    if (geoTimer) clearTimeout(geoTimer);
+    geoTimer = setTimeout(reverseGeo, 500);
+  }
+
+  async function reverseGeo() {
+    geoTimer = null;
+    if (geoBusy || !gps) return;
+    geoBusy = true;
+    const lat = gps.lat.toFixed(6);
+    const lon = gps.lon.toFixed(6);
+    try {
+      const resp = await fetch(
+        "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=id&lat=" +
+          lat + "&lon=" + lon
+      );
+      if (!resp.ok) return;
+      const j = await resp.json();
+      if (!j || j.error) return;
+      lastGeoKey = gps.lat.toFixed(4) + "," + gps.lon.toFixed(4);
+      const d = j.address || {};
+      const street = [
+        d.road || d.footway || d.pedestrian || d.neighbourhood || "",
+        d.house_number || "",
+      ].filter(Boolean).join(" ").trim();
+      const cand = [
+        street,
+        d.neighbourhood || "",
+        d.suburb || "",
+        d.city_district || "",
+        d.city || d.town || d.village || d.municipality || "",
+        d.county || "",
+        d.state || "",
+        d.postcode || "",
+        d.country || "",
+      ].filter(Boolean);
+      const parts = [];
+      cand.forEach((p) => {
+        if (!parts.length || parts[parts.length - 1] !== p) parts.push(p);
+      });
+      geoAddr = parts.length ? parts.join(", ") : "";
+    } catch (e) {
+      /* offline / server error: alamat lama tetap dipakai */
+    } finally {
+      geoBusy = false;
+    }
+    if (camActive) updateCamOverlay();
+    else draw();
+  }
+
+  // ============ MAP REAL-TIME (OpenStreetMap tiles) ============
+  const TILE = 256;
+  const tileCache = new Map();
+
+  function tileImg(url) {
+    let im = tileCache.get(url);
+    if (!im) {
+      im = new Image();
+      im.onload = () => { if (camActive) setTimeout(refreshMap, 60); };
+      im.onerror = () => { im.failed = true; if (camActive) setTimeout(refreshMap, 60); };
+      im.src = url;
+      tileCache.set(url, im);
+    }
+    return im;
+  }
+
+  let mapLastRender = 0;
+  function refreshMap() {
+    const now = Date.now();
+    if (now - mapLastRender < 650) return;
+    mapLastRender = now;
+    const cv = $("cammap");
+    if (!cv) return;
+    const mctx = cv.getContext("2d");
+    const W = cv.width;
+    const H = cv.height;
+    mctx.fillStyle = "#1c2129";
+    mctx.fillRect(0, 0, W, H);
+    if (!gps) {
+      mctx.fillStyle = "#9db2c8";
+      mctx.font = "12px system-ui";
+      mctx.fillText("menunggu GPS...", 12, H / 2);
+      return;
+    }
+    const acc = gps.acc || 0;
+    const zoom = acc > 3000 ? 13 : acc > 800 ? 14 : acc > 200 ? 15 : 16;
+    const n = Math.pow(2, zoom);
+    const latRad = (gps.lat * Math.PI) / 180;
+    const xt = Math.floor(((gps.lon + 180) / 360) * n);
+    const yf = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2;
+    const yt = Math.floor(yf * n);
+    const ox = W / 2 - (((gps.lon + 180) / 360) * n - xt) * TILE;
+    const oy = H / 2 - (yf * n - yt) * TILE;
+    for (let tx = Math.floor(-ox / TILE) - 1; tx <= Math.ceil((W - ox) / TILE); tx++) {
+      const gx = (xt + tx + n) % n;
+      for (let ty = Math.floor(-oy / TILE) - 1; ty <= Math.ceil((H - oy) / TILE); ty++) {
+        const gy = yt + ty;
+        if (gy < 0 || gy >= n) continue;
+        const sx = tx * TILE + ox;
+        const sy = ty * TILE + oy;
+        const im = tileImg("https://tile.openstreetmap.org/" + zoom + "/" + gx + "/" + gy + ".png");
+        if (im.complete && im.naturalWidth) mctx.drawImage(im, sx, sy, TILE, TILE);
+        else if (im.failed) {
+          mctx.fillStyle = "#232833";
+          mctx.fillRect(sx, sy, TILE, TILE);
+        } else {
+          mctx.fillStyle = "#171c24";
+          mctx.fillRect(sx, sy, TILE, TILE);
+        }
+      }
+    }
+    mctx.fillStyle = "#9db2c8";
+    mctx.font = "9px system-ui";
+    mctx.fillText("OSM z" + zoom, 5, H - 6);
+    const mpp = (156543.03392 * Math.cos(latRad)) / n;
+    const rPx = acc > 0 ? Math.max(6, Math.min(160, acc / mpp)) : 0;
+    if (rPx > 0) {
+      mctx.beginPath();
+      mctx.arc(W / 2, H / 2, rPx, 0, Math.PI * 2);
+      mctx.fillStyle = "rgba(70,180,255,.15)";
+      mctx.fill();
+      mctx.strokeStyle = "rgba(70,180,255,.8)";
+      mctx.lineWidth = 1.5;
+      mctx.stroke();
+    }
+    mctx.beginPath();
+    mctx.arc(W / 2, H / 2, 5, 0, Math.PI * 2);
+    mctx.fillStyle = "#ff3b30";
+    mctx.fill();
+    mctx.strokeStyle = "#fff";
+    mctx.lineWidth = 2;
+    mctx.stroke();
   }
 
   // ============ STAMP OPTIONS / LINES ============
@@ -149,7 +331,12 @@
         day: "2-digit", month: "2-digit", year: "numeric",
       }),
       gpsStr: gps ? gps.lat.toFixed(6) + ", " + gps.lon.toFixed(6) : null,
-      address: $("txtAddress").value.trim(),
+      address: $("txtAddress").value.trim() || geoAddr || "",
+      company: $("inpCompany").value.trim(),
+      name: $("inpName").value.trim(),
+      showCert: $("chkCert").checked,
+      cert: "SIG:1·EPOCH:" + Math.floor(now.getTime() / 1000) + (gps ? "·COORD:" + gps.lat.toFixed(6) + "," + gps.lon.toFixed(6) + "±" + Math.round(gps.acc) + "m" : "") + "·UTC:" + now.toISOString(),
+      filter: (FILTERS[$("selFilter").value] || "none"),
       showLogo: $("chkLogo").checked,
       showTime: $("chkTime").checked,
       showDate: $("chkDate").checked,
@@ -157,6 +344,7 @@
       pos: $("selPos").value,
       color: $("txtColor").value,
       size: parseInt($("selSize").value, 10) || 48,
+      style: $("selStyle").value || "classic",
     };
   }
 
@@ -178,10 +366,49 @@
     return lines;
   }
 
-  function paintStamp(dctx, W, H, opts) {
-    // relative font size
-    const fs = Math.max(20, Math.min(90, (opts.size / 48) * Math.max(22, H * 0.045)));
+  function wrapTextC(dctx, text, maxWidth) {
+    const words = text.split(/\s+/);
+    const lines = [];
+    let current = "";
+    for (const w of words) {
+      const test = current ? current + " " + w : w;
+      if (dctx.measureText(test).width > maxWidth && current) {
+        lines.push(current);
+        current = w;
+      } else {
+        current = test;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
 
+  function drawLogo(dctx, x, y, px) {
+    if (logoReady && logoImg) {
+      const h = Math.round(px);
+      const w = Math.max(1, Math.round(h * (logoImg.width / logoImg.height)));
+      dctx.drawImage(logoImg, x, y - h, w, h);
+      return w + 8;
+    }
+    dctx.save();
+    dctx.fillStyle = "#ff9500";
+    dctx.font = "800 " + Math.round(px) + "px system-ui, sans-serif";
+    dctx.textBaseline = "alphabetic";
+    dctx.fillText("TM", x, y);
+    dctx.restore();
+    return Math.round(px * 1.5);
+  }
+
+  function paintStamp(dctx, W, H, opts) {
+    const fs = Math.max(20, Math.min(90, (opts.size / 48) * Math.max(22, H * 0.045)));
+    if (opts.style === "gedo") {
+      paintStampGedo(dctx, W, H, opts, fs);
+      return;
+    }
+    if (opts.style === "timemark") {
+      paintStampTimemark(dctx, W, H, opts, fs);
+      return;
+    }
     // ---- build stamp lines ----
     const lines = [];
     if (opts.showTime) lines.push(opts.timeStr);
@@ -191,6 +418,12 @@
       dctx.font = "600 " + Math.round(fs) + "px system-ui, sans-serif";
       const wrapped = wrapText(opts.address, W - 90);
       wrapped.forEach((l) => lines.push(l));
+    }
+    if (opts.company) lines.push("Perusahaan: " + opts.company);
+    if (opts.name) lines.push("Nama: " + opts.name);
+    if (opts.showCert) {
+      dctx.font = "600 " + Math.round(fs * 0.82) + "px system-ui, sans-serif";
+      wrapTextC(dctx, opts.cert, W - 90).forEach((l) => lines.push(l));
     }
 
     const lineH = Math.round(fs * 1.4);
@@ -206,13 +439,8 @@
     let x = 18;
     const baseY = opts.pos === "top" ? barH : H - barH;
     if (opts.showLogo) {
-      dctx.save();
-      dctx.fillStyle = "#ff9500";
-      dctx.font = "800 " + Math.round(fs * 1.2) + "px system-ui, sans-serif";
-      dctx.textBaseline = "alphabetic";
-      dctx.fillText("TM", x, opts.pos === "top" ? Math.round(fs * 1.0) + 10 : baseY + Math.round(fs * 1.0) + 6);
-      dctx.restore();
-      x += (logoWidth - 4);
+      const ly = opts.pos === "top" ? Math.round(fs * 1.0) + 10 : baseY + Math.round(fs * 1.0) + 6;
+      x += drawLogo(dctx, x, ly, Math.round(fs * 1.2));
     }
 
     // ---- text lines ----
@@ -228,6 +456,145 @@
     }
   }
 
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  function paintStampGedo(dctx, W, H, opts, fs) {
+    const pad = Math.max(12, Math.round(fs * 0.5));
+    const gap = 4;
+    const rows = [];
+    const timeSize = Math.round(fs * 2.0);
+    if (opts.showTime) rows.push({ t: opts.timeStr, f: "800 " + timeSize + "px system-ui, sans-serif", c: "#ffffff" });
+    if (opts.showDate) rows.push({ t: opts.dateStr, f: "700 " + Math.round(fs * 0.9) + "px system-ui, sans-serif", c: "#f3f6fd" });
+    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, f: "600 " + Math.round(fs * 0.62) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "#7fd4ff" });
+    if (opts.address) {
+      wrapText(opts.address, W - pad * 2 - 12).forEach((l) =>
+        rows.push({ t: l, f: "600 " + Math.round(fs * 0.72) + "px system-ui, sans-serif", c: "#ffffff" })
+      );
+    }
+    if (opts.company) rows.push({ t: "🏢 " + opts.company, f: "600 " + Math.round(fs * 0.6) + "px system-ui, sans-serif", c: "#ffd27a" });
+    if (opts.name) rows.push({ t: "👤 " + opts.name, f: "600 " + Math.round(fs * 0.6) + "px system-ui, sans-serif", c: "#ffd27a" });
+    if (opts.showCert) {
+      dctx.font = "500 " + Math.round(fs * 0.5) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif";
+      wrapTextC(dctx, opts.cert, Math.max(140, W - 24 - pad * 2)).forEach((l) =>
+        rows.push({ t: l, f: "500 " + Math.round(fs * 0.5) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "#9fb0c4" })
+      );
+    }
+    if (!rows.length) rows.push({ t: opts.timeStr || opts.dateStr || "•", f: "800 " + timeSize + "px system-ui, sans-serif", c: "#ffffff" });
+
+    const widths = rows.map((r) => {
+      dctx.font = r.f;
+      return dctx.measureText(r.t).width;
+    });
+    const lpx = Math.min(timeSize, Math.round(fs * 1.8));
+    const aimgW = logoReady && logoImg ? Math.round(lpx * (logoImg.width / logoImg.height)) : Math.round(lpx * 1.5);
+    const logoW = opts.showLogo ? aimgW + 8 : 0;
+    const blockW = Math.max.apply(null, widths) + pad * 2 + logoW;
+    const hPx = rows.map((r) => parseInt(r.f, 10));
+    const blockH = hPx.reduce((a, b) => a + b, 0) + gap * (rows.length - 1) + pad * 2;
+    const bx = 10;
+    const by = opts.pos === "top" ? 10 : H - blockH - 10;
+
+    dctx.fillStyle = "rgba(0,0,0,0.56)";
+    roundRect(dctx, bx, by, blockW, blockH, 10);
+    dctx.fill();
+
+    let y = by + pad + hPx[0];
+    let x = bx + pad;
+    if (opts.showLogo) {
+      x += drawLogo(dctx, x, by + pad + lpx, lpx);
+    }
+    rows.forEach((r, i) => {
+      dctx.font = r.f;
+      dctx.fillStyle = r.c;
+      dctx.textBaseline = "alphabetic";
+      dctx.shadowColor = "rgba(0,0,0,0.85)";
+      dctx.shadowBlur = 4;
+      dctx.shadowOffsetY = 1;
+      dctx.fillText(r.t, x, y);
+      dctx.shadowBlur = 0;
+      dctx.shadowOffsetY = 0;
+      if (i < rows.length - 1) y += hPx[i + 1] + gap;
+    });
+  }
+
+  function paintStampTimemark(dctx, W, H, opts, fs) {
+    const pl = 14, pr = 14, pt = 10, pb = 8, rowGap = 2;
+    const timeF = Math.round(fs * 2.9);
+    const dateF = Math.round(fs * 0.95);
+    const infoF = Math.round(fs * 0.78);
+    const coordF = Math.round(fs * 0.7);
+
+    const rows = [];
+    if (opts.showTime) rows.push({ t: opts.timeStr, f: "800 " + timeF + "px system-ui, sans-serif", c: "#ffffff" });
+    if (opts.showDate) rows.push({ t: opts.dateStr, f: "700 " + dateF + "px system-ui, sans-serif", c: "#f2f5fb" });
+    if (opts.address) {
+      dctx.font = "600 " + infoF + "px system-ui, sans-serif";
+      wrapTextC(dctx, opts.address, W - pl - pr - 60).forEach((l) =>
+        rows.push({ t: l, f: "600 " + infoF + "px system-ui, sans-serif", c: "#ffffff" })
+      );
+    }
+    if (opts.showGps && opts.gpsStr) rows.push({ t: "📍 " + opts.gpsStr, f: "600 " + coordF + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif", c: "#7fd4ff" });
+    if (opts.company) rows.push({ t: "Perusahaan: " + opts.company, f: "600 " + coordF + "px system-ui, sans-serif", c: "#ffd27a" });
+    if (opts.name) rows.push({ t: "Nama: " + opts.name, f: "600 " + coordF + "px system-ui, sans-serif", c: "#ffd27a" });
+    if (!rows.length) rows.push({ t: opts.timeStr || opts.dateStr || "•", f: "800 " + timeF + "px system-ui, sans-serif", c: "#ffffff" });
+
+    const hPx = rows.map((r) => parseInt(r.f, 10));
+    const barH = hPx.reduce((a, b) => a + b, 0) + rowGap * (rows.length - 1) + pt + pb;
+    const barY = opts.pos === "top" ? 0 : H - barH;
+
+    const logoH = Math.min(60, Math.round(fs * 1.7));
+    const logoW = opts.showLogo
+      ? (logoReady && logoImg ? Math.round(logoH * (logoImg.width / logoImg.height)) : Math.round(logoH * 1.5))
+      : 0;
+
+    dctx.fillStyle = "rgba(0,0,0,0.62)";
+    dctx.fillRect(0, barY, W, barH);
+
+    if (opts.showLogo) {
+      const lx = W - logoW - 14;
+      const ly = opts.pos === "top" ? pt + 4 : H - pb - logoH;
+      if (logoReady && logoImg) {
+        dctx.drawImage(logoImg, lx, ly, logoW, logoH);
+      } else {
+        dctx.fillStyle = "#ff9500";
+        dctx.font = "800 " + Math.round(logoH * 0.92) + "px system-ui, sans-serif";
+        dctx.textBaseline = "alphabetic";
+        dctx.fillText("TM", lx, ly + Math.round(logoH * 0.9));
+      }
+    }
+
+    let y = barY + pt + hPx[0];
+    rows.forEach((r, i) => {
+      dctx.font = r.f;
+      dctx.fillStyle = r.c;
+      dctx.textBaseline = "alphabetic";
+      dctx.shadowColor = "rgba(0,0,0,0.9)";
+      dctx.shadowBlur = 3;
+      dctx.shadowOffsetY = 1;
+      dctx.fillText(r.t, pl, y);
+      dctx.shadowBlur = 0;
+      dctx.shadowOffsetY = 0;
+      if (i < rows.length - 1) y += hPx[i + 1] + rowGap;
+    });
+
+    if (opts.showCert) {
+      dctx.font = "500 " + Math.round(fs * 0.5) + "px 'Roboto Mono','PT Mono',Consolas,monospace,sans-serif";
+      const tw = dctx.measureText(opts.cert).width;
+      dctx.fillStyle = "rgba(255,255,255,0.55)";
+      dctx.textBaseline = "alphabetic";
+      const cy = opts.pos === "top" ? barY + pt + timeF + 4 : H - pb;
+      dctx.fillText(opts.cert, Math.max(pl, W - tw - pr), cy);
+    }
+  }
+
   function draw() {
     if (!img) return;
 
@@ -238,8 +605,11 @@
     cv.height = h;
 
     // base image
+    const opts = buildOptions(new Date());
+    ctx.filter = opts.filter;
     ctx.drawImage(img, 0, 0, w, h);
-    paintStamp(ctx, w, h, buildOptions(new Date()));
+    ctx.filter = "none";
+    paintStamp(ctx, w, h, opts);
   }
 
   // ============ LIVE CAMERA ============
@@ -275,6 +645,7 @@
   }
 
   function stopCamera() {
+    if (camRecording) stopRecord();
     if (camTimer) { clearInterval(camTimer); camTimer = null; }
     if (camStream) {
       const tracks = camStream.getTracks();
@@ -288,6 +659,23 @@
   function updateCamOverlay() {
     if (!camActive) return;
     const opts = buildOptions(new Date());
+
+    const recEl = $("camrec");
+    recEl.classList.toggle("hidden", !camRecording);
+    if (camRecording) {
+      const s = Math.floor((Date.now() - recStartT) / 1000);
+      recEl.textContent = "● REC " + String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    }
+
+    $("camvideo").style.filter = opts.filter;
+    const lg = $("camlogo");
+    if (opts.showLogo && logoReady && logoImg) {
+      lg.src = logoImg.src;
+      lg.className = "cam-logo " + (opts.pos === "top" ? "top" : "bottom");
+      lg.classList.remove("hidden");
+    } else {
+      lg.classList.add("hidden");
+    }
 
     const dateEl = $("camdate");
     const gpsEl = $("camgps");
@@ -309,6 +697,17 @@
 
     addrEl.classList.toggle("hidden", !opts.address);
     if (opts.address) addrEl.textContent = opts.address;
+
+    const fullEl = $("camaddrfull");
+    const nearEl = $("camnear");
+    if (gps) {
+      fullEl.textContent = opts.address || "📍 mencari alamat...";
+      nearEl.textContent = "±" + Math.round(gps.acc) + " m (" + opts.gpsStr + ")";
+    } else {
+      fullEl.textContent = "Aktifkan GPS & izinkan lokasi";
+      nearEl.textContent = "";
+    }
+    refreshMap();
   }
 
   function showCamsave(msg, ok) {
@@ -321,11 +720,235 @@
     $("camsave").className = "cam-save hidden";
   }
 
+  // ============ VIDEO RECORDER ============
+  let camRecording = false;
+  let recChunks = [];
+  let rec = null;
+  let recRAF = 0;
+  let recCanvas = null;
+  let recCtx = null;
+  let recMime = "video/webm";
+  let recStartT = 0;
+  let recMicStream = null;
+  let recUrl = null;
+  let recPending = null;
+  const REC_FPS = 24;
+
+  function pickVideoMime() {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
+      const cand = ["video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+      for (const m of cand) {
+        try { if (MediaRecorder.isTypeSupported(m)) return m; } catch (e) {}
+      }
+    }
+    return "video/webm";
+  }
+
+  function recLoop() {
+    if (!camRecording) return;
+    const video = $("camvideo");
+    recCtx.filter = FILTERS[$("selFilter").value] || "none";
+    recCtx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height);
+    recCtx.filter = "none";
+    paintStamp(recCtx, recCanvas.width, recCanvas.height, buildOptions(new Date()));
+    recRAF = requestAnimationFrame(recLoop);
+  }
+
+  async function startRecord() {
+    if (!camActive || camRecording || camSaving) return;
+    const video = $("camvideo");
+    if (!video.videoWidth || !video.videoHeight) return;
+
+    const scale = Math.min(1, (parseInt($("selRecQ").value, 10) || 1280) / video.videoWidth);
+    const W = Math.round((video.videoWidth * scale) / 2) * 2;
+    const H = Math.round((video.videoHeight * scale) / 2) * 2;
+    recMime = pickVideoMime();
+    recChunks = [];
+    recCanvas = document.createElement("canvas");
+    recCanvas.width = W;
+    recCanvas.height = H;
+    recCtx = recCanvas.getContext("2d");
+
+    let stream = null;
+    try { stream = recCanvas.captureStream(REC_FPS); } catch (e) {
+      showCamsave("Rekam video tidak didukung di perangkat ini.", false);
+      return;
+    }
+
+    if (!camStream.getAudioTracks().length) {
+      try {
+        recMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mt = recMicStream.getAudioTracks()[0];
+        if (mt && !stream.getAudioTracks().length) stream.addTrack(mt);
+      } catch (e) {
+        recMicStream = null;
+        showCamsave("Mic ditolak — video direkam tanpa suara", false);
+      }
+    } else if (stream && camStream.getAudioTracks().length) {
+      stream.addTrack(camStream.getAudioTracks()[0]);
+    }
+
+    try {
+      rec = new MediaRecorder(stream, { mimeType: recMime, videoBitsPerSecond: 5000000 });
+    } catch (e) {
+      try { rec = new MediaRecorder(stream); } catch (e2) {
+        showCamsave("MediaRecorder tidak didukung.", false);
+        return;
+      }
+    }
+
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+    rec.onstop = () => {
+      const isMp4 = recMime.indexOf("mp4") !== -1;
+      const type = isMp4 ? "video/mp4" : "video/webm";
+      const blob = new Blob(recChunks, { type: type });
+      stopRecUI();
+      const ext = isMp4 ? ".mp4" : ".webm";
+      const name = "video_" + makeVideoTimestamp() + ext;
+      openRecPreview(blob, name, type);
+    };
+
+    recStartT = Date.now();
+    try { rec.start(500); } catch (e) {
+      showCamsave("Gagal mulai rekam.", false);
+      return;
+    }
+    camRecording = true;
+    playlistBeep(true);
+    recRAF = requestAnimationFrame(recLoop);
+    $("btnRecord").classList.add("recording");
+    $("camrec").classList.remove("hidden");
+    $("camrec").textContent = "● REC 00:00";
+  }
+
+  function stopRecord() {
+    if (!camRecording) return;
+    camRecording = false;
+    if (recRAF) cancelAnimationFrame(recRAF);
+    if (recMicStream) {
+      recMicStream.getTracks().forEach((t) => t.stop());
+      recMicStream = null;
+    }
+    try { rec.stop(); } catch (e) {}
+  }
+
+  function stopRecUI() {
+    rec = null;
+    recCanvas = null;
+    recCtx = null;
+    playlistBeep(false);
+    $("btnRecord").classList.remove("recording");
+    $("camrec").classList.add("hidden");
+  }
+
+  function playlistBeep(start) {
+    try {
+      const A = window.AudioContext || window.webkitAudioContext;
+      if (!A) return;
+      const ac = new A();
+      const t0 = ac.currentTime;
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = "square";
+      o.frequency.value = start ? 880 : 440;
+      o.connect(g);
+      g.connect(ac.destination);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.28, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+      o.start(t0);
+      o.stop(t0 + 0.1);
+      setTimeout(() => { try { ac.close(); } catch (e) {} }, 200);
+    } catch (e) {}
+  }
+
+  function openRecPreview(blob, name, mime) {
+    recPending = { blob, name, mime };
+    if (recUrl) URL.revokeObjectURL(recUrl);
+    recUrl = URL.createObjectURL(blob);
+    $("recvideo").src = recUrl;
+    show("recplay");
+  }
+
+  function closeRecPreview() {
+    if (recUrl) {
+      URL.revokeObjectURL(recUrl);
+      recUrl = null;
+    }
+    $("recvideo").src = "";
+    $("recvideo").pause();
+    recPending = null;
+  }
+
+  $("recSave").addEventListener("click", () => {
+    if (!recPending) return;
+    const p = recPending;
+    closeRecPreview();
+    show("cam");
+    saveRecBlob(p.blob, p.name, p.mime);
+  });
+
+  $("recDiscard").addEventListener("click", () => {
+    closeRecPreview();
+    show("cam");
+    showCamsave("Rekaman dibuang.", true);
+  });
+
+  function saveRecBlob(blob, name, mime) {
+    if (isCapacitor) {
+      showCamsave("⏳ Menyimpan video...", true);
+      nativeSaveVideo(blob, name, mime).then((res) => showCamsave(res.msg, res.ok));
+      return;
+    }
+    webDownload(blob, name);
+    showCamsave("⬇️ Video terunduh ke folder Download", true);
+  }
+
+  async function nativeSaveVideo(blob, name, mime) {
+    try {
+      const base64 = await blobToBase64(blob);
+      const gs = plugin("GallerySave");
+      if (gs && gs.saveVideo) {
+        await gs.saveVideo({
+          data: base64,
+          fileName: name,
+          mimeType: mime,
+          dateTime: Date.now(),
+          latitude: gps ? gps.lat : null,
+          longitude: gps ? gps.lon : null,
+        });
+        return { ok: true, msg: "✅ Video tersimpan ke kamera (DCIM/Camera)." };
+      }
+    } catch (e) { /* fallback */ }
+
+    try {
+      const Filesystem = plugin("Filesystem");
+      const base64 = await blobToBase64(blob);
+      await Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS" });
+      return { ok: true, msg: "✅ Video tersimpan ke Documents (plugin video tidak aktif)." };
+    } catch (err) {
+      return { ok: false, msg: "⚠️ Gagal simpan video: " + (err && err.message ? err.message : err) };
+    }
+  }
+
+  function makeVideoTimestamp() {
+    const now = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return now.getFullYear() + "-" + p(now.getMonth() + 1) + "-" + p(now.getDate()) +
+      "_" + p(now.getHours()) + p(now.getMinutes()) + p(now.getSeconds());
+  }
+
+  $("btnRecord").addEventListener("click", () => {
+    if (camRecording) stopRecord();
+    else startRecord();
+  });
+
   $("btnShutter").addEventListener("click", () => {
     if (!camActive || camSaving) return;
     const video = $("camvideo");
     if (!video.videoWidth || !video.videoHeight) return;
     camSaving = true;
+    playShutter();
 
     const w = video.videoWidth;
     const h = video.videoHeight;
@@ -333,12 +956,38 @@
     tmp.width = w;
     tmp.height = h;
     const tctx = tmp.getContext("2d");
+    const opts = buildOptions(new Date());
+    tctx.filter = opts.filter;
     tctx.drawImage(video, 0, 0, w, h);
-    paintStamp(tctx, w, h, buildOptions(new Date()));
+    tctx.filter = "none";
+    paintStamp(tctx, w, h, opts);
 
     const name = makeFilename();
     saveCanvas(tmp, name, "camera");
   });
+
+  function playShutter() {
+    try {
+      const A = window.AudioContext || window.webkitAudioContext;
+      if (!A) return;
+      const ac = new A();
+      const t0 = ac.currentTime;
+      [0, 0.09].forEach((d, i) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.type = "sine";
+        o.frequency.value = i ? 2100 : 1500;
+        o.connect(g);
+        g.connect(ac.destination);
+        g.gain.setValueAtTime(0.0001, t0 + d);
+        g.gain.exponentialRampToValueAtTime(0.35, t0 + d + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.07);
+        o.start(t0 + d);
+        o.stop(t0 + d + 0.08);
+      });
+      setTimeout(() => { try { ac.close(); } catch (e) {} }, 350);
+    } catch (e) {}
+  }
 
   $("btnFlip").addEventListener("click", () => {
     camFacing = camFacing === "environment" ? "user" : "environment";
@@ -355,12 +1004,19 @@
   function makeFilename() {
     const now = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    return (
-      "timemark_" +
-      now.getFullYear() + "-" + p(now.getMonth() + 1) + "-" + p(now.getDate()) +
-      "_" + p(now.getHours()) + p(now.getMinutes()) + p(now.getSeconds()) +
-      ".jpg"
-    );
+    const clean = (s) =>
+      (s || "").toString().replace(/[\\/:*?"<>|#%&\n]/g, "-").trim().slice(0, 40);
+    const dt = now.getFullYear() + "-" + p(now.getMonth() + 1) + "-" + p(now.getDate()) +
+      " " + p(now.getHours()) + "." + p(now.getMinutes()) + "." + p(now.getSeconds());
+    const addr = clean($("txtAddress").value.trim() || geoAddr);
+    const nm = clean($("inpName").value.trim());
+    const co = clean($("inpCompany").value.trim());
+    const parts = ["timemark", dt,
+      addr && addr !== "timemark" ? addr : "",
+      nm ? "(Nama-" + nm + ")" : "",
+      co ? "(Perusahaan-" + co + ")" : "",
+    ];
+    return parts.filter(Boolean).join("_") + ".jpg";
   }
 
   function canvasToBlob(canvas, cb) {
@@ -415,7 +1071,14 @@
       const base64 = await blobToBase64(blob);
       const gs = plugin("GallerySave");
       if (gs && gs.save) {
-        await gs.save({ data: base64, fileName: name, toCamera: true });
+        await gs.save({
+          data: base64,
+          fileName: name,
+          toCamera: true,
+          dateTime: Date.now(),
+          latitude: gps ? gps.lat : null,
+          longitude: gps ? gps.lon : null,
+        });
         return { ok: true, msg: "✅ Foto tersimpan ke penyimpanan kamera (DCIM/Camera)." };
       }
     } catch (e) { /* plugin tidak tersedia → fallback */ }
@@ -455,16 +1118,49 @@
     gps = null;
     $("fileInput").value = "";
     $("txtAddress").value = "";
+    $("inpName").value = "";
+    $("inpCompany").value = "";
     show("mode-pick");
     watchGps();
   });
 
   // live redraw
-  ["chkLogo", "chkTime", "chkDate", "chkGps", "txtColor", "selSize", "selPos"].forEach((id) => {
-    $(id).addEventListener("change", draw);
-    $(id).addEventListener("input", draw);
+  ["chkLogo", "chkTime", "chkDate", "chkGps", "txtColor", "selSize", "selPos", "selStyle", "selFilter", "chkCert"].forEach((id) => {
+    $(id).addEventListener("change", () => {
+      draw();
+      if (camActive) updateCamOverlay();
+    });
   });
+
+  $("inpLogoFile").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = (ev) => {
+      const im = new Image();
+      im.onload = () => {
+        logoImg = im;
+        logoReady = true;
+        draw();
+        if (camActive) updateCamOverlay();
+      };
+      im.src = ev.target.result;
+    };
+    r.readAsDataURL(f);
+  });
+
+  $("btnLogoClear").addEventListener("click", () => {
+    logoImg = null;
+    logoReady = false;
+    $("inpLogoFile").value = "";
+    draw();
+    if (camActive) updateCamOverlay();
+  });
+
   $("txtAddress").addEventListener("input", () => { draw(); if (camActive) updateCamOverlay(); });
+  ["inpName", "inpCompany"].forEach((id) => {
+    $(id).addEventListener("input", () => { draw(); });
+  });
 
   // Always show GPS status box whenever editor is visible
   const origShow = show;
