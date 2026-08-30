@@ -37,13 +37,22 @@ jobs:
       - name: Inject Android permissions
         run: |
           MF="android/app/src/main/AndroidManifest.xml"
-          grep -q "ACCESS_FINE_LOCATION" "$MF" || sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n\n    <application#' "$MF"
+          grep -q "ACCESS_FINE_LOCATION" "$MF" || sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"/>\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n\n    <application#' "$MF"
 
       - name: Pasang plugin MediaStore (simpan ke kamera/DCIM)
         run: |
-          mkdir -p android/app/src/main/java/com/timemark/foto
-          cp android-overlay/com/timemark/foto/GallerySave.java android/app/src/main/java/com/timemark/foto/GallerySave.java
-          cp android-overlay/com/timemark/foto/MainActivity.java android/app/src/main/java/com/timemark/foto/MainActivity.java
+          mkdir -p android/app/src/main/java/com/xa/gddo
+          cp android-overlay/com/xa/gddo/GallerySave.java android/app/src/main/java/com/xa/gddo/GallerySave.java
+          cp android-overlay/com/xa/gddo/MainActivity.java android/app/src/main/java/com/xa/gddo/MainActivity.java
+
+      - name: Support semua arsitektur (armeabi-v7a, arm64-v8a, x86, x86_64)
+        run: |
+          BG="android/app/build.gradle"
+          if ! grep -q "abiFilters" "$BG"; then
+            sed -i '/minSdkVersion/a\        ndk {\n            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"\n        }' "$BG"
+          fi
+          echo "--- defaultConfig ---"
+          sed -n '/defaultConfig/,/}/p' "$BG"
 
       - name: Build APK (debug)
         run: |
