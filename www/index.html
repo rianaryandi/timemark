@@ -36,7 +36,14 @@
           <span class="mode-ico">📷</span>
           <span>Kamera</span>
         </button>
+        <button class="mode-btn" data-mode="live">
+          <span class="mode-ico">⏱️</span>
+          <span>Kamera Langsung
+            <small class="mode-sub">stempel waktu &amp; GPS real-time</small>
+          </span>
+        </button>
       </div>
+      <button id="btnAbout" class="link-btn">ℹ️ Info Aplikasi &amp; Pengembang</button>
     </div>
   </section>
 
@@ -96,6 +103,51 @@
     </div>
   </section>
 
+  <!-- Live camera -->
+  <section id="cam" class="screen">
+    <div class="cam-stage">
+      <video id="camvideo" autoplay playsinline muted></video>
+      <div id="cam-top" class="cam-bar top">
+        <div id="camdate" class="cam-chip hidden">--/--/----</div>
+        <div id="camgps" class="cam-chip hidden">📍 mencari lokasi...</div>
+      </div>
+      <div id="cam-bottom" class="cam-bar bottom">
+        <div id="camtime" class="cam-chip big hidden">--:--:--</div>
+        <div id="camaddr" class="cam-chip addr hidden">alamat / teks</div>
+      </div>
+    </div>
+
+    <div class="cam-controls">
+      <button id="btnFlip" class="cam-round" title="Ganti kamera">🔄</button>
+      <button id="btnShutter" class="shutter" title="Ambil foto"></button>
+      <button id="btnCamBack" class="cam-round" title="Tutup kamera">✕</button>
+    </div>
+
+    <div id="camsave" class="cam-save hidden"></div>
+  </section>
+
+  <!-- About / Info Aplikasi -->
+  <section id="about" class="screen">
+    <div class="card center">
+      <div class="about-logo">TM</div>
+      <h2>Timemark Foto</h2>
+      <p class="muted">Stempel foto dengan waktu, tanggal &amp; GPS real-time</p>
+      <hr class="about-hr">
+      <div class="about-row"><span>Versi</span><span>1.0.0</span></div>
+      <div class="about-row"><span>Stempel</span><span>Waktu · Tanggal · GPS · Teks · Logo</span></div>
+      <div class="about-row"><span>Kamera</span><span>Live viewfinder + shutter</span></div>
+      <div class="about-row"><span>Simpan ke</span><span>Penyimpanan kamera (DCIM/Camera)</span></div>
+      <div class="about-credit">
+        <div class="credit-badge">⚡ Powered by <strong>XA-GDDO</strong></div>
+        <small class="muted">Developer / pengembang aplikasi</small>
+      </div>
+      <div class="dev-link">
+        <a href="https://t.me/masgexo" target="_blank" rel="noopener">🧑‍💻 Pengembang: @masgexo</a>
+      </div>
+      <button id="btnAboutBack" class="btn primary about-back">Kembali</button>
+    </div>
+  </section>
+
   <!-- Done -->
   <section id="done" class="screen">
     <div class="card center">
@@ -108,6 +160,10 @@
   </section>
 
   <input type="file" id="fileInput" accept="image/*" hidden>
+
+  <footer class="app-footer">
+    <small class="footer-note">Timemark Foto · stempel waktu &amp; GPS real-time</small>
+  </footer>
 </div>
 
 <script src="js/app.js"></script>
