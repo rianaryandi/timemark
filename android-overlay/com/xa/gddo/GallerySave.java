@@ -95,7 +95,16 @@ public class GallerySave extends Plugin {
                 }
             }
 
-            @PluginMethod
+            JSObject ret = new JSObject();
+            ret.put("ok", true);
+            ret.put("uri", item.toString());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Gagal simpan ke galeri: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
     public void saveVideo(PluginCall call) {
         String data = call.getString("data");
         String fileName = call.getString("fileName");
